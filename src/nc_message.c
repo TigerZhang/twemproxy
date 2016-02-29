@@ -269,6 +269,9 @@ done:
     msg->fdone = 0;
     msg->swallow = 0;
     msg->redis = 0;
+    msg->migrate = 0;
+    msg->migrated = 0;
+    msg->orig_msg = NULL;
 
     return msg;
 }

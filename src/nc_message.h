@@ -185,6 +185,7 @@ typedef enum msg_parse_result {
     ACTION( RSP_REDIS_INTEGER )                                                                     \
     ACTION( RSP_REDIS_BULK )                                                                        \
     ACTION( RSP_REDIS_MULTIBULK )                                                                   \
+    ACTION( REQ_MIG )                                                                               \
     ACTION( SENTINEL )                                                                              \
 
 
@@ -260,6 +261,11 @@ struct msg {
     unsigned             fdone:1;         /* all fragments are done? */
     unsigned             swallow:1;       /* swallow response? */
     unsigned             redis:1;         /* redis? */
+
+    unsigned             migrate:1;       /* migrate command? */
+    unsigned             migrated:1;      /* message sent after migration? */
+    struct msg           *orig_msg;       /* oginal message for migration message */
+    struct conn          *orig_conn;
 };
 
 TAILQ_HEAD(msg_tqh, msg);

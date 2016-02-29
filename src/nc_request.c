@@ -136,6 +136,7 @@ req_done(struct conn *conn, struct msg *msg)
     ASSERT(msg->request);
 
     if (!msg->done) {
+        log_debug(LOG_DEBUG, "req_done false");
         return false;
     }
 
@@ -150,6 +151,7 @@ req_done(struct conn *conn, struct msg *msg)
     }
 
     if (msg->nfrag_done < msg->nfrag) {
+        log_debug(LOG_DEBUG, "req_done false");
         return false;
     }
 
@@ -160,6 +162,7 @@ req_done(struct conn *conn, struct msg *msg)
          pmsg = cmsg, cmsg = TAILQ_PREV(cmsg, msg_tqh, c_tqe)) {
 
         if (!cmsg->done) {
+            log_debug(LOG_DEBUG, "req_done false");
             return false;
         }
     }
@@ -169,6 +172,7 @@ req_done(struct conn *conn, struct msg *msg)
          pmsg = cmsg, cmsg = TAILQ_NEXT(cmsg, c_tqe)) {
 
         if (!cmsg->done) {
+            log_debug(LOG_DEBUG, "req_done false");
             return false;
         }
     }
@@ -602,7 +606,47 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
         }
     }
 
-    s_conn->enqueue_inq(ctx, s_conn, msg);
+    if (s_conn->migrating == 1) {
+        log_debug(LOG_DEBUG, "s %d is migrating", s_conn->sd);
+
+        struct msg *migrate_msg = msg_get(c_conn, true, true);
+
+        // MIGRAGE "host port key destination-db timeout"
+        status = msg_prepend_format(migrate_msg,
+                                    "*6\r\n"
+                                            "$7\r\nMIGRATE\r\n"
+                                            "$9\r\nlocalhost\r\n"
+                                            "$4\r\n6380\r\n"
+                                            "$%d\r\n%.*s\r\n"
+                                            "$1\r\n0\r\n"
+                                            "$4\r\n1000\r\n",
+                                    keylen, keylen, key
+        );
+
+
+        if (status != NC_OK) {
+            msg_put(migrate_msg);
+            return;
+        }
+        migrate_msg->owner = c_conn;
+        migrate_msg->swallow = 1;
+        migrate_msg->migrate = 1;
+        migrate_msg->orig_msg = msg;
+        migrate_msg->orig_conn = s_conn;
+        msg->migrated = 1;
+
+        log_debug(LOG_DEBUG, "enqueue req %d s %d", migrate_msg->id, s_conn->sd);
+        s_conn->enqueue_inq(ctx, s_conn, migrate_msg);
+        event_add_out(ctx->evb, s_conn);
+    } else {
+//        if (msg->migrated) {
+//            struct conn *target = s_conn->mig_target_conn;
+//            target->enqueue_inq(ctx, target, msg);
+//        } else {
+        s_conn->enqueue_inq(ctx, s_conn, msg);
+        event_add_out(ctx->evb, s_conn);
+//        }
+    }
 
     req_forward_stats(ctx, s_conn->owner, msg);
 

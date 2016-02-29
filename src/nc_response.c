@@ -213,6 +213,17 @@ rsp_filter(struct context *ctx, struct conn *conn, struct msg *msg)
                   "%"PRIu64" on s %d", msg->id, msg->mlen, pmsg->id,
                   conn->sd);
 
+        if (pmsg->migrate == 1) {
+            log_debug(LOG_DEBUG, "req %d is %s migrate req", pmsg->id, pmsg->migrate == 1 ? "" : "NOT");
+            struct msg *omsg = pmsg->orig_msg;
+            struct conn *o_conn = pmsg->orig_conn;
+            struct conn *mig_target_conn = o_conn->mig_target_conn;
+
+            log_debug(LOG_DEBUG, "enqueue req %d to s %d", omsg->id, mig_target_conn->sd);
+            mig_target_conn->enqueue_inq(ctx, mig_target_conn, omsg);
+            event_add_out(ctx->evb, mig_target_conn);
+        }
+
         rsp_put(msg);
         req_put(pmsg);
         return true;
@@ -262,10 +273,13 @@ rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *msg)
     ASSERT(c_conn->client && !c_conn->proxy);
 
     if (req_done(c_conn, TAILQ_FIRST(&c_conn->omsg_q))) {
+        log_debug(LOG_DEBUG, "req %d done", TAILQ_FIRST(&c_conn->omsg_q)->id);
         status = event_add_out(ctx->evb, c_conn);
         if (status != NC_OK) {
             c_conn->err = errno;
         }
+    } else {
+        log_debug(LOG_DEBUG, "req %d doesn't done", pmsg->id);
     }
 
     rsp_forward_stats(ctx, s_conn->owner, msg, msgsize);
@@ -281,6 +295,7 @@ rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg,
     ASSERT(msg->owner == conn);
     ASSERT(nmsg == NULL || !nmsg->request);
 
+    log_debug(LOG_DEBUG, "rsp %d recv done", msg->id);
     /* enqueue next message (response), if any */
     conn->rmsg = nmsg;
 

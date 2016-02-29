@@ -132,6 +132,17 @@ server_each_set_owner(void *elem, void *data)
     return NC_OK;
 }
 
+static rstatus_t
+server_each_set_status(void *elem, void *data)
+{
+    struct server *s = elem;
+    struct server_pool *sp = data;
+
+    s->status = SERVER_STATUS_NORMAL;
+
+    return NC_OK;
+}
+
 rstatus_t
 server_init(struct array *server, struct array *conf_server,
             struct server_pool *sp)
@@ -163,6 +174,12 @@ server_init(struct array *server, struct array *conf_server,
         return status;
     }
 
+    status = array_each(server, server_each_set_status, sp);
+    if (status != NC_OK) {
+        server_deinit(server);
+        return status;
+    }
+
     log_debug(LOG_DEBUG, "init %"PRIu32" servers in pool %"PRIu32" '%.*s'",
               nserver, sp->idx, sp->name.len, sp->name.data);
 
@@ -189,7 +206,13 @@ server_conn(struct server *server)
     struct server_pool *pool;
     struct conn *conn;
 
-    pool = server->owner;
+    if (server->owner == NULL) {
+        if (server->status == SERVER_STATUS_MIGRATION_TARGET && server->mig_target != NULL) {
+            pool = server->mig_target->owner;
+        }
+    } else {
+        pool = server->owner;
+    }
 
     /*
      * FIXME: handle multiple server connections per server and do load
@@ -553,7 +576,7 @@ server_connected(struct context *ctx, struct conn *conn)
     ASSERT(!conn->client && !conn->proxy);
     ASSERT(conn->connecting && !conn->connected);
 
-    stats_server_incr(ctx, server, server_connections);
+//    stats_server_incr(ctx, server, server_connections);
 
     conn->connecting = 0;
     conn->connected = 1;
@@ -727,16 +750,42 @@ server_pool_conn(struct context *ctx, struct server_pool *pool, uint8_t *key,
         return NULL;
     }
 
+//    ASSERT (server->status == SERVER_STATUS_MIGRATING && server->mig_target == NULL);
+
     /* pick a connection to a given server */
     conn = server_conn(server);
     if (conn == NULL) {
         return NULL;
     }
 
+    if (server->status == SERVER_STATUS_MIGRATING && server->mig_target != NULL) {
+//        log_debug(LOG_DEBUG, )
+        struct conn *mig_target_conn;
+        server->mig_target->owner = server->owner;
+        mig_target_conn = server_conn(server->mig_target);
+        if (mig_target_conn == NULL) {
+            return NULL;
+        }
+
+        mig_target_conn->owner = server->mig_target;
+        status = server_connect(ctx, server->mig_target, mig_target_conn);
+        if (status != NC_OK) {
+            server_close(ctx, mig_target_conn);
+            return NULL;
+        }
+
+        conn->mig_target_conn = mig_target_conn;
+    }
+
     status = server_connect(ctx, server, conn);
     if (status != NC_OK) {
         server_close(ctx, conn);
         return NULL;
+    }
+
+    conn->migrating = 0;
+    if (server->status == SERVER_STATUS_MIGRATING && server->mig_target != NULL) {
+        conn->migrating = 1;
     }
 
     return conn;

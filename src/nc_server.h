@@ -66,6 +66,15 @@ struct continuum {
     uint32_t value;  /* hash value */
 };
 
+typedef enum server_status {
+    SERVER_STATUS_NORMAL,
+
+    SERVER_STATUS_MIGRATING,
+    SERVER_STATUS_MIGRATION_DONE,
+    SERVER_STATUS_MIGRATION_TARGET,
+
+} server_status_t;
+
 struct server {
     uint32_t           idx;           /* server index */
     struct server_pool *owner;        /* owner pool */
@@ -82,6 +91,9 @@ struct server {
 
     int64_t            next_retry;    /* next retry time in usec */
     uint32_t           failure_count; /* # consecutive failures */
+
+    server_status_t     status;       /* status for migration */
+    struct server       *mig_target;  /* migration target */
 };
 
 struct server_pool {

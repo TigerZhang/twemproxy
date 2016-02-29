@@ -1140,6 +1140,8 @@ void
 _stats_server_incr(struct context *ctx, struct server *server,
                    stats_server_field_t fidx)
 {
+    return;
+
     struct stats_metric *stm;
 
     stm = stats_server_to_metric(ctx, server, fidx);
@@ -1155,6 +1157,8 @@ void
 _stats_server_decr(struct context *ctx, struct server *server,
                    stats_server_field_t fidx)
 {
+    return;
+
     struct stats_metric *stm;
 
     stm = stats_server_to_metric(ctx, server, fidx);
@@ -1170,6 +1174,8 @@ void
 _stats_server_incr_by(struct context *ctx, struct server *server,
                       stats_server_field_t fidx, int64_t val)
 {
+    return;
+
     struct stats_metric *stm;
 
     stm = stats_server_to_metric(ctx, server, fidx);
@@ -1185,6 +1191,8 @@ void
 _stats_server_decr_by(struct context *ctx, struct server *server,
                       stats_server_field_t fidx, int64_t val)
 {
+    return;
+    
     struct stats_metric *stm;
 
     stm = stats_server_to_metric(ctx, server, fidx);

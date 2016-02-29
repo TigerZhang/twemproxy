@@ -158,6 +158,9 @@ _conn_get(void)
     conn->redis = 0;
     conn->authenticated = 0;
 
+    conn->migrating = 0;
+    conn->mig_target_conn = NULL;
+
     ntotal_conn++;
     ncurr_conn++;
 

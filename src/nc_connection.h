@@ -89,6 +89,9 @@ struct conn {
     unsigned            done:1;          /* done? aka close? */
     unsigned            redis:1;         /* redis? */
     unsigned            authenticated:1; /* authenticated? */
+
+    unsigned            migrating:1;     /* is mirgrating? */
+    struct conn         *mig_target_conn; /* migration target connection */
 };
 
 TAILQ_HEAD(conn_tqh, conn);

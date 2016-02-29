@@ -45,6 +45,7 @@ redis_argz(struct msg *r)
     switch (r->type) {
     case MSG_REQ_REDIS_PING:
     case MSG_REQ_REDIS_QUIT:
+    case MSG_REQ_MIG:
         return true;
 
     default:
@@ -90,6 +91,8 @@ redis_arg0(struct msg *r)
     case MSG_REQ_REDIS_ZCARD:
     case MSG_REQ_REDIS_PFCOUNT:
     case MSG_REQ_REDIS_AUTH:
+
+    case MSG_REQ_MIG:
         return true;
 
     default:
@@ -542,6 +545,12 @@ redis_parse_req(struct msg *r)
                     r->type = MSG_REQ_REDIS_DEL;
                     break;
                 }
+
+                    if (str3icmp(m, 'm', 'i', 'g')) {
+                        r->type = MSG_REQ_MIG;
+                        r->noforward = 1;
+                        break;
+                    }
 
                 break;
 
@@ -2676,6 +2685,65 @@ redis_fragment(struct msg *r, uint32_t ncontinuum, struct msg_tqh *frag_msgq)
 }
 
 rstatus_t
+migrate_target_init(struct server *s)
+{
+    s->idx = -1;
+    s->owner = NULL;
+
+    string_copy(&s->pname, "localhost:6380:1", strlen("localhost:6380:1"));
+    string_copy(&s->name, "localhost:6380", strlen("localhost:6380"));
+    string_copy(&s->addrstr, "localhost", strlen("localhost"));
+    s->port = (uint16_t)6380;
+    s->weight = (uint32_t)1;
+
+//    nc_memcpy(&s->info, &cs->info, sizeof(cs->info));
+
+    s->ns_conn_q = 0;
+    TAILQ_INIT(&s->s_conn_q);
+
+    s->next_retry = 0LL;
+    s->failure_count = 0;
+
+    s->mig_target = NULL;
+    s->status = SERVER_STATUS_MIGRATION_TARGET;
+
+    return NC_OK;
+}
+
+rstatus_t
+show_each_server_name(void *elem, void *data)
+{
+    struct server *s = elem;
+
+    log_debug(LOG_NOTICE, "server name: %s\n", s->name.data);
+
+    if (strncmp(s->name.data, "127.0.0.1:6379", s->name.len) == 0) {
+        if (s->mig_target == NULL) {
+            struct server *t = nc_alloc(sizeof(struct server));
+            memset(t, 0, sizeof(struct server));
+            migrate_target_init(t);
+
+            t->mig_target = s;
+            t->status = SERVER_STATUS_MIGRATION_TARGET;
+
+            // start migration
+            s->status = SERVER_STATUS_MIGRATING;
+            s->mig_target = t;
+        }
+    }
+
+    return NC_OK;
+}
+
+rstatus_t
+start_migration(struct server_pool *sp)
+{
+    array_each(&sp->server, show_each_server_name, (void*)sp);
+
+    return NC_OK;
+}
+
+rstatus_t
 redis_reply(struct msg *r)
 {
     struct conn *c_conn;
@@ -2692,8 +2760,13 @@ redis_reply(struct msg *r)
         return msg_append(response, rsp_auth_required.data, rsp_auth_required.len);
     }
 
+    if (r->type == MSG_REQ_MIG) {
+        start_migration(c_conn->owner);
+    }
+
     switch (r->type) {
     case MSG_REQ_REDIS_PING:
+    case MSG_REQ_MIG:
         return msg_append(response, rsp_pong.data, rsp_pong.len);
 
     default:
